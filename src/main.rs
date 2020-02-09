@@ -3,6 +3,7 @@ use std::env;
 use std::ffi::OsStr;
 use std::fs;
 use std::fs::File;
+use std::io::prelude::*;
 use std::io::BufReader;
 use std::path::Path;
 use std::path::PathBuf;
@@ -17,6 +18,63 @@ fn main() {
 
     let mut rpg_files: Vec<PathBuf> = Vec::new();
     find_files(Path::new(input_folder), &mut rpg_files);
+
+    for rpg_file in rpg_files {
+        decrypt_file(&key, &rpg_file, is_inplace, output_folder);
+    }
+}
+
+fn decrypt_file(key: &Vec<u8>, input_path: &PathBuf, is_inplace: bool, output_folder: &str) {
+    let mut output_file = get_output_file(input_path, is_inplace, output_folder);
+
+    let mut input_buffer = vec![];
+
+    let mut input_file = File::open(input_path).expect("Failed to open input rpg file");
+    input_file
+        .read_to_end(&mut input_buffer)
+        .expect("Failed to read input rpg file");
+
+    // ignore fake header
+    //
+    let offset = 16;
+    for i in 0..16 {
+        input_buffer[offset + i] = key[i] ^ input_buffer[offset + i];
+    }
+
+    output_file
+        .write_all(&input_buffer[offset..])
+        .expect("Failed to write to output file");
+}
+
+fn get_output_file(input_path: &PathBuf, is_inplace: bool, output_folder: &str) -> File {
+    let new_file_extension = match input_path.extension().unwrap().to_str().unwrap() {
+        "rpgmvp" => "png",
+        "rpgmvm" => "m4a",
+        "rpgmvo" => "ogg",
+        _ => "png",
+    };
+
+    let parent_path: PathBuf;
+    if is_inplace {
+        parent_path = match input_path.parent() {
+            Some(p) => PathBuf::from(p),
+            None => Path::new(".").to_path_buf(),
+        };
+    } else {
+        parent_path = Path::new(output_folder).to_path_buf();
+    }
+
+    let mut new_file_name: String = parent_path.to_str().unwrap().to_string();
+    new_file_name.push_str("/");
+    new_file_name.push_str(input_path.file_stem().unwrap().to_str().unwrap());
+    new_file_name.push_str(".");
+    new_file_name.push_str(new_file_extension);
+
+    println!("{}", new_file_name);
+
+    let new_file = Path::new(&new_file_name);
+
+    File::create(new_file).expect("Failed to open output rpg file")
 }
 
 fn find_key(system_file_path: &PathBuf) -> Option<Vec<u8>> {
@@ -89,9 +147,12 @@ fn find_system_file(input_folder_str: String) -> Option<Vec<u8>> {
 
 fn parse_config(args: &[String]) -> (&str, bool, &str) {
     match args.len() {
-        0 | 1 => ("./", false, ""),
-        2 => (&args[1], false, ""),
-        3 => (&args[1], true, &args[2]),
+        0 | 1 => ("./", true, ""),
+        2 => (&args[1], true, ""),
+        3 => {
+            std::fs::create_dir_all(&args[2]).expect("Failed to create output directory");
+            (&args[1], false, &args[2])
+        }
         _ => {
             panic!("Usage: rpgmd <game_folder> <output_folder:optional>");
         }
