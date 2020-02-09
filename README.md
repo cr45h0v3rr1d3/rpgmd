@@ -4,7 +4,7 @@ Rpg Maker Decrypter
 # install
 
     cargo build
-    cargo install
+    cargo install --path ./
 
 # run
 
